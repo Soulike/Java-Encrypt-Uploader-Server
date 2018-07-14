@@ -3,6 +3,8 @@ package SocketProcessor;
 import util.Objects.Message;
 import util.Objects.UploadFileInfo;
 
+import static util.Decompressor.Decompressor.*;
+
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
 import javax.crypto.NoSuchPaddingException;
@@ -100,7 +102,8 @@ public class UploadProcessor implements SocketProcessor
                 }
                 else if (fileObj.isZipped())
                 {
-                    // TODO: 解压文件
+                    decompress(tempFilePath, root);
+                    sendMessage(new Message(true, "文件上传成功"), socket);
                 }
                 else if (!fileObj.isZipped())
                 {
@@ -110,6 +113,5 @@ public class UploadProcessor implements SocketProcessor
                 }
             }
         }
-
     }
 }
