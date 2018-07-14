@@ -60,19 +60,31 @@ public class Decompressor
             {
                 Path outPath = Paths.get(dstPath.toString(), zipEntryName);
 
-                //判断路径是否存在,不存在则创建文件路径
+                // 判断父路径是否存在,不存在则创建文件路径
                 if (Files.notExists(outPath.getParent()))
                 {
                     Files.createDirectories(outPath.getParent());
                 }
-                if (Files.notExists(outPath))
+
+                // 如果指定位置已经有同名文件或文件夹，删掉
+                if (Files.exists(outPath))
                 {
-                    Files.createFile(outPath);
+                    Files.delete(outPath);
                 }
 
-                // 如果这个文件是文件夹，那在解压文件时就已经创建，不需要处理
-                if (!outPath.toFile().isDirectory())
+                // 如果当前解压的东西是文件夹，创建文件夹
+                if (entry.isDirectory())
                 {
+                    Files.createDirectories(outPath);
+                }
+                // 如果是文件，就创建文件
+                else
+                {
+                    if (Files.notExists(outPath))
+                    {
+                        Files.createFile(outPath);
+                    }
+
                     try (OutputStream out = new BufferedOutputStream(new DataOutputStream(new FileOutputStream(outPath.toString()))))
                     {
                         byte[] buff = new byte[1024 * 1024];
