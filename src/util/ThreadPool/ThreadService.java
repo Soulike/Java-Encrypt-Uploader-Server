@@ -145,6 +145,10 @@ public class ThreadService extends Thread
             logger.logError(String.format("线程 %s 处理请求时发生错误", Thread.currentThread().getName()));
             e.printStackTrace();
         }
+        finally
+        {
+            toWaiting();
+        }
     }
 }
 

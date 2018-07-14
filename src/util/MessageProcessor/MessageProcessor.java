@@ -10,22 +10,10 @@ import java.net.Socket;
  */
 public class MessageProcessor
 {
-    public static void sendMessage(Message message, Socket socket) throws IOException
+    public static void sendMessage(Message message, OutputStream out) throws IOException
     {
-        try (OutputStream out = socket.getOutputStream();
-             ObjectOutputStream objOut = new ObjectOutputStream(out))
-        {
-            objOut.writeObject(message);
-            objOut.flush();
-        }
-    }
-
-    public static Message parseMessage(byte[] bytes) throws IOException, ClassNotFoundException
-    {
-        try (InputStream in = new ByteArrayInputStream(bytes);
-             ObjectInputStream objIn = new ObjectInputStream(in))
-        {
-            return (Message) objIn.readObject();
-        }
+        ObjectOutputStream objOut = new ObjectOutputStream(out);
+        objOut.writeObject(message);
+        objOut.flush();
     }
 }

@@ -8,6 +8,7 @@ import static util.Decompressor.Decompressor.*;
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
 import javax.crypto.NoSuchPaddingException;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.Socket;
@@ -15,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.NoSuchAlgorithmException;
@@ -25,12 +28,14 @@ public class UploadProcessor implements SocketProcessor
 {
     private final Cipher cipher;
     private final Path root;
+    private static final String ENCRYPT_MODE = "AES/CFB8/NoPadding";
 
-    public UploadProcessor(Path root) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException
+    public UploadProcessor(Path root) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException, InvalidAlgorithmParameterException
     {
         Key key = getKey("JavaUploader");
-        cipher = Cipher.getInstance("AES");
-        cipher.init(Cipher.DECRYPT_MODE, key);
+        cipher = Cipher.getInstance(ENCRYPT_MODE);
+        IvParameterSpec iv = new IvParameterSpec("1122334455667788".getBytes());
+        cipher.init(Cipher.DECRYPT_MODE, key, iv);
 
         this.root = root;
         if (Files.notExists(root))
@@ -39,10 +44,10 @@ public class UploadProcessor implements SocketProcessor
         }
     }
 
-    private Key getKey(String password)
+    private static Key getKey(String password)
     {
-        byte[] ketData = get16BytesKetData(password);
-        return new SecretKeySpec(ketData, "AES");
+        byte[] keyData = get16BytesKetData(password);
+        return new SecretKeySpec(keyData, "AES");
     }
 
     private static byte[] get16BytesKetData(String password)
@@ -73,45 +78,48 @@ public class UploadProcessor implements SocketProcessor
     public void processSocket(Socket socket) throws IOException, ClassNotFoundException
     {
         UploadFileInfo fileObj;
-        try (InputStream rawIn = socket.getInputStream();
-             CipherInputStream in = new CipherInputStream(rawIn, cipher))
+
+        InputStream rawIn = socket.getInputStream();
+        OutputStream rawOut = socket.getOutputStream();
+        CipherInputStream in = new CipherInputStream(rawIn, cipher);
+
+        // 先读取文件对象
+        ObjectInputStream objIn = new ObjectInputStream(in);
+        fileObj = (UploadFileInfo) objIn.readObject();
+
+        Path tempFilePath = Files.createTempFile(null, ".tmp");
+        // 再读取二进制内容
+        DataInputStream dataIn = new DataInputStream(in);
+
+        FileOutputStream fileOut = new FileOutputStream(tempFilePath.toFile());
+        DataOutputStream fileDataOut = new DataOutputStream(fileOut);
         {
-            // 先读取文件对象
-            try (ObjectInputStream objIn = new ObjectInputStream(in))
+            byte[] buffer = new byte[256];
+            int readLength = 0;
+            while ((readLength = dataIn.read(buffer)) != -1)
             {
-                fileObj = (UploadFileInfo) objIn.readObject();
+                fileDataOut.write(buffer, 0, readLength);
+                fileDataOut.flush();
             }
+            fileDataOut.close();
 
-            Path tempFilePath = Files.createTempFile(null, "tmp");
-            // 再读取二进制内容
-            try (DataInputStream dataIn = new DataInputStream(in);
-                 FileOutputStream out = new FileOutputStream(tempFilePath.toFile());
-                 DataOutputStream dataOut = new DataOutputStream(out))
+            if (fileDataOut.size() != fileObj.getFileSize())
             {
-                byte[] buffer = new byte[1024 * 1024];
-                int readLength = 0;
-                while ((readLength = dataIn.read(buffer)) != -1)
-                {
-                    dataOut.write(buffer, 0, readLength);
-                }
-
-                if (dataOut.size() != fileObj.getFileSize())
-                {
-                    sendMessage(new Message(false, "文件上传不完整，请重试"), socket);
-                    Files.delete(tempFilePath);
-                }
-                else if (fileObj.isZipped())
-                {
-                    decompress(tempFilePath, root);
-                    sendMessage(new Message(true, "文件上传成功"), socket);
-                }
-                else if (!fileObj.isZipped())
-                {
-                    Path finalFilePath = Paths.get(root.toAbsolutePath().toString(), fileObj.getFileName());
-                    Files.move(tempFilePath, finalFilePath);
-                    sendMessage(new Message(true, "文件上传成功"), socket);
-                }
+                sendMessage(new Message(false, "文件上传不完整，请重试"), rawOut);
+                Files.delete(tempFilePath);
             }
+            else if (fileObj.isZipped())
+            {
+                decompress(tempFilePath, root);
+                sendMessage(new Message(true, "文件夹上传成功"), rawOut);
+            }
+            else if (!fileObj.isZipped())
+            {
+                Path finalFilePath = Paths.get(root.toAbsolutePath().toString(), fileObj.getFileName());
+                Files.move(tempFilePath, finalFilePath, StandardCopyOption.REPLACE_EXISTING);
+                sendMessage(new Message(true, "文件上传成功"), rawOut);
+            }
+            socket.close();
         }
     }
 }

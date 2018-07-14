@@ -1,11 +1,13 @@
 package util.Objects;
 
+import java.io.Serializable;
+
 /**
  * 上传文件文件信息对象，放置在上传流的首部。
  *
  * @author soulike
  */
-public class UploadFileInfo
+public class UploadFileInfo implements Serializable
 {
     private final String fileName;
     private final long fileSize;

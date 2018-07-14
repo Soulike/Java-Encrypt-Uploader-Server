@@ -8,6 +8,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 
@@ -32,10 +33,8 @@ public class FileServer
                     ThreadPool pool = new ThreadPool();
                     while (true)
                     {
-                        try (Socket socket = serverSocket.accept())
-                        {
-                            pool.createServer(socket, processor);
-                        }
+                        Socket socket = serverSocket.accept();
+                        pool.createServer(socket, processor);
                     }
                 }
                 catch (IOException e)
@@ -44,7 +43,7 @@ public class FileServer
                     e.printStackTrace();
                 }
             }
-            catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException e)
+            catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException e)
             {
                 logger.logError("加密模块错误");
                 e.printStackTrace();

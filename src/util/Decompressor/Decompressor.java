@@ -9,12 +9,15 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * 通过命令行解压一个 Zip 文件
+ * 解压 Zip 文件
  *
  * @author soulike
  */
 public class Decompressor
 {
+    /**
+     * 通过命令行参数将一个 Zip 文件解压到当前目录
+     */
     public static void main(String[] args)
     {
         if (args.length != 1)
