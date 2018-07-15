@@ -3,8 +3,7 @@ package util.ThreadPool;
 import util.MyLogger;
 import SocketProcessor.SocketProcessor;
 
-import java.net.Socket;
-import java.net.SocketException;
+import java.net.*;
 
 /**
  * 线程类，继承 Thread，以实现对每一个新连接创建一个新线程。
@@ -109,7 +108,6 @@ public class ThreadService extends Thread
         this.processor = processor;
         notify();// 内容分配好了，唤醒线程
     }
-
 
     /**
      * 在执行线程之后，把 Socket 对象交给 server 对象处理。
