@@ -26,8 +26,17 @@ import static util.MessageProcessor.MessageProcessor.*;
 
 public class UploadProcessor implements SocketProcessor
 {
+    /**
+     * 加密 Cipher 对象
+     */
     private final Cipher cipher;
+    /**
+     * 上传文件存放根目录
+     */
     private final Path root;
+    /**
+     * 加密方法
+     */
     private static final String ENCRYPT_MODE = "AES/CFB8/NoPadding";
 
     public UploadProcessor(Path root) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException, InvalidAlgorithmParameterException
@@ -70,56 +79,15 @@ public class UploadProcessor implements SocketProcessor
 
 
     /**
-     * 上传对象格式
-     * UploadFileInfo Object
-     * File Content
-     * 先读取一个 UploadFileInfo 对象，再读取文件的二进制内容
+     * 处理上传文件。
+     * 循环接收 UploadFileInfo 对象，在接收到该对象后依据该对象内容来决定下一步动作。
+     * 如果对象中的 isFile 为 true，就根据 fileSize 从流中接收指定字节的数据存为文件；
+     * 如果对象中的 isFile 为 false，就根据 filePath 仅创建路径。
+     *
+     * @param socket ServerSocket 产生的 Socket 对象
      */
-    public void processSocket(Socket socket) throws IOException, ClassNotFoundException
+    public void processSocket(Socket socket)
     {
-        UploadFileInfo fileObj;
 
-        InputStream rawIn = socket.getInputStream();
-        OutputStream rawOut = socket.getOutputStream();
-        CipherInputStream in = new CipherInputStream(rawIn, cipher);
-
-        // 先读取文件对象
-        ObjectInputStream objIn = new ObjectInputStream(in);
-        fileObj = (UploadFileInfo) objIn.readObject();
-
-        Path tempFilePath = Files.createTempFile(null, ".tmp");
-        // 再读取二进制内容
-        DataInputStream dataIn = new DataInputStream(in);
-
-        FileOutputStream fileOut = new FileOutputStream(tempFilePath.toFile());
-        DataOutputStream fileDataOut = new DataOutputStream(fileOut);
-        {
-            byte[] buffer = new byte[256];
-            int readLength = 0;
-            while ((readLength = dataIn.read(buffer)) != -1)
-            {
-                fileDataOut.write(buffer, 0, readLength);
-                fileDataOut.flush();
-            }
-            fileDataOut.close();
-
-            if (fileDataOut.size() != fileObj.getFileSize())
-            {
-                sendMessage(new Message(false, "文件上传不完整，请重试"), rawOut);
-                Files.delete(tempFilePath);
-            }
-            else if (fileObj.isZipped())
-            {
-                decompress(tempFilePath, root);
-                sendMessage(new Message(true, "文件夹上传成功"), rawOut);
-            }
-            else if (!fileObj.isZipped())
-            {
-                Path finalFilePath = Paths.get(root.toAbsolutePath().toString(), fileObj.getFileName());
-                Files.move(tempFilePath, finalFilePath, StandardCopyOption.REPLACE_EXISTING);
-                sendMessage(new Message(true, "文件上传成功"), rawOut);
-            }
-            socket.close();
-        }
     }
 }
