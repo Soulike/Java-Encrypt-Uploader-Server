@@ -1,12 +1,12 @@
 package SocketProcessor;
 
-import util.Objects.Message;
 import util.Objects.UploadFileInfo;
 
-import static util.Decompressor.Decompressor.*;
+import static util.Deleter.recursiveDeleter.*;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
+import javax.crypto.CipherOutputStream;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -16,20 +16,18 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.NoSuchAlgorithmException;
-
-import static util.MessageProcessor.MessageProcessor.*;
 
 public class UploadProcessor implements SocketProcessor
 {
     /**
      * 加密 Cipher 对象
      */
-    private final Cipher cipher;
+    private final Cipher inCipher;
+    private final Cipher outCipher;
     /**
      * 上传文件存放根目录
      */
@@ -39,18 +37,27 @@ public class UploadProcessor implements SocketProcessor
      */
     private static final String ENCRYPT_MODE = "AES/CFB8/NoPadding";
 
+    /**
+     * 上传文件时使用的缓冲区
+     */
+    private final byte[] buffer;
+
     public UploadProcessor(Path root) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException, InvalidAlgorithmParameterException
     {
         Key key = getKey("JavaUploader");
-        cipher = Cipher.getInstance(ENCRYPT_MODE);
+        inCipher = Cipher.getInstance(ENCRYPT_MODE);
+        outCipher = Cipher.getInstance(ENCRYPT_MODE);
         IvParameterSpec iv = new IvParameterSpec("1122334455667788".getBytes());
-        cipher.init(Cipher.DECRYPT_MODE, key, iv);
+        inCipher.init(Cipher.DECRYPT_MODE, key, iv);
+        outCipher.init(Cipher.ENCRYPT_MODE, key, iv);
 
         this.root = root;
         if (Files.notExists(root))
         {
             Files.createDirectories(root);
         }
+
+        buffer = new byte[512];
     }
 
     private static Key getKey(String password)
@@ -86,8 +93,52 @@ public class UploadProcessor implements SocketProcessor
      *
      * @param socket ServerSocket 产生的 Socket 对象
      */
-    public void processSocket(Socket socket)
+    public void processSocket(Socket socket) throws IOException, ClassNotFoundException
     {
+        try (CipherInputStream decryptedIn = new CipherInputStream(socket.getInputStream(), inCipher);
+             CipherOutputStream encryptedOut = new CipherOutputStream(socket.getOutputStream(), outCipher))
+        {
+            // 用于读 UploadFileInfo 对象的输入流
+            ObjectInputStream objIn = new ObjectInputStream(decryptedIn);
+            // 用于读文件二进制信息的输入流
+            DataInputStream dataIn = new DataInputStream(decryptedIn);
+            // 用于存放当前上传的 UploadFileInfo 对象
+            UploadFileInfo currentFileInfo = null;
+            // 存储文件时使用的输出流
+            DataOutputStream fileOut = null;
+            // 文件/文件夹路径所用 Path 对象
+            Path currentFilePath = null;
 
+            while (!socket.isClosed())
+            {
+                currentFileInfo = (UploadFileInfo) objIn.readObject();
+                currentFilePath = Paths.get(root.toString(), currentFileInfo.getFilePath());
+                if (Files.exists(currentFilePath))
+                {
+                    delete(currentFilePath);
+                }
+                // 如果是文件，就读取文件大小并从流中取出指定大小字节
+                if (currentFileInfo.isFile())
+                {
+                    Files.createFile(currentFilePath);
+                    fileOut = new DataOutputStream(new FileOutputStream(currentFilePath.toFile()));
+                    // 这一次文件读取的总字节数
+                    long totalReadBytesNum = 0;
+                    int readBytesNum = 0;
+                    while (totalReadBytesNum < currentFileInfo.getFileSize())
+                    {
+                        readBytesNum = dataIn.read(buffer);
+                        fileOut.write(buffer, 0, readBytesNum);
+                        totalReadBytesNum += readBytesNum;
+                    }
+                    fileOut.close();
+                }
+                // 如果是目录，就根据对象信息创建这个目录
+                else
+                {
+                    Files.createDirectories(currentFilePath);
+                }
+            }
+        }
     }
 }
