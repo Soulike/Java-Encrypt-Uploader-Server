@@ -21,13 +21,10 @@ import java.security.*;
 public class FileUploadProcessor implements SocketProcessor
 {
     /**
-     * 输入流解密 Cipher 对象。
-     */
-    private final Cipher inCipher;
-    /**
-     * 输出流加密 Cipher 对象。
-     */
-    private final Cipher outCipher;
+     * 创建 Cipher 对象需要的信息
+     * */
+    private final Key key;
+    private final IvParameterSpec iv;
     /**
      * 上传文件存放根目录。
      */
@@ -37,33 +34,22 @@ public class FileUploadProcessor implements SocketProcessor
      */
     private static final String ENCRYPT_MODE = "AES/CFB8/NoPadding";
 
-    /**
-     * 上传文件时使用的缓冲区。
-     */
-    private final byte[] buffer;
 
     /**
      * 处理器初始化构造器。
      *
      * @param root 上传文件存放的文件夹。
      */
-    public FileUploadProcessor(Path root) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException, InvalidAlgorithmParameterException
+    public FileUploadProcessor(Path root) throws IOException
     {
-        Key key = getAESKey("JavaUploader");
-        inCipher = Cipher.getInstance(ENCRYPT_MODE);
-        outCipher = Cipher.getInstance(ENCRYPT_MODE);
-
-        IvParameterSpec iv = new IvParameterSpec("1122334455667788".getBytes());
-        inCipher.init(Cipher.DECRYPT_MODE, key, iv);
-        outCipher.init(Cipher.ENCRYPT_MODE, key, iv);
+        key = getAESKey("JavaUploader");
+        iv = new IvParameterSpec("1122334455667788".getBytes());
 
         this.root = root;
         if (Files.notExists(root))
         {
             Files.createDirectories(root);
         }
-
-        buffer = new byte[512];
     }
 
 
@@ -75,15 +61,21 @@ public class FileUploadProcessor implements SocketProcessor
      *
      * @param socket ServerSocket 产生的 Socket 对象。
      */
-    public void processSocket(Socket socket) throws IOException, ClassNotFoundException
+    public void processSocket(Socket socket) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException, InvalidAlgorithmParameterException
     {
-        try (CipherInputStream decryptedIn = new CipherInputStream(socket.getInputStream(), inCipher);
-             CipherOutputStream encryptedOut = new CipherOutputStream(socket.getOutputStream(), outCipher))
+        // 创建 Cipher 实例
+        Cipher inCipher = Cipher.getInstance(ENCRYPT_MODE);
+        Cipher outCipher = Cipher.getInstance(ENCRYPT_MODE);
+        inCipher.init(Cipher.DECRYPT_MODE, key, iv);
+        outCipher.init(Cipher.ENCRYPT_MODE, key, iv);
+
+        try (final CipherInputStream decryptedIn = new CipherInputStream(socket.getInputStream(), inCipher);
+             final CipherOutputStream encryptedOut = new CipherOutputStream(socket.getOutputStream(), outCipher))
         {
             // 用于读 UploadFileInfo 对象的输入流
-            ObjectInputStream objIn = new ObjectInputStream(decryptedIn);
+            final ObjectInputStream objIn = new ObjectInputStream(decryptedIn);
             // 用于读文件二进制信息的输入流
-            DataInputStream dataIn = new DataInputStream(decryptedIn);
+            final DataInputStream dataIn = new DataInputStream(decryptedIn);
 
             // 用于存放当前上传的 UploadFileInfo 对象
             UploadFileInfo currentFileInfo = null;
@@ -129,6 +121,7 @@ public class FileUploadProcessor implements SocketProcessor
 
                         int readBytesNum = 0;
                         long totalReadBytesNum = 0;
+                        final byte[] buffer = new byte[512];
                         while (totalReadBytesNum < currentFileInfo.getFileSize())
                         {
                             // 最多读到当前文件结束为止

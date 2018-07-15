@@ -25,7 +25,7 @@ public class recursiveDeleter
             // 如果是一个目录，就需要递归删除
             else
             {
-                Object[] fileList = Files.list(filePath).toArray();
+                final Object[] fileList = Files.list(filePath).toArray();
                 for (Object pathObj : fileList)
                 {
                     delete((Path) pathObj);

@@ -18,7 +18,7 @@ public class AESKeyGenerator
      */
     public static Key getAESKey(String password)
     {
-        byte[] keyData = get16BytesKeyData(password);
+        final byte[] keyData = get16BytesKeyData(password);
         return new SecretKeySpec(keyData, "AES");
     }
 
@@ -29,8 +29,8 @@ public class AESKeyGenerator
      */
     private static byte[] get16BytesKeyData(String password)
     {
-        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
-        byte[] BytesKeyData = new byte[16];
+        final byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
+        final byte[] BytesKeyData = new byte[16];
         int copyLength = passwordBytes.length >= 16 ? 16 : passwordBytes.length;
         for (int i = 0; i < copyLength; i++)
         {

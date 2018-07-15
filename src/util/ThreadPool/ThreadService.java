@@ -77,6 +77,7 @@ public class ThreadService extends Thread
     {
         socket = null;
         processor = null;
+        logger.logInfo(String.format("线程 %s 休眠", Thread.currentThread().getName()));
     }
 
     /**
@@ -128,7 +129,7 @@ public class ThreadService extends Thread
                 // 当不要求这个线程退出时再进行操作
                 if (!exit)
                 {
-                    logger.logInfo(String.format("线程 %s 开始处理连接", Thread.currentThread().getName()));
+                    logger.logInfo(String.format("线程 %s 唤醒", Thread.currentThread().getName()));
                     processor.processSocket(socket);
                     if (!socket.isClosed())
                     {
@@ -137,14 +138,12 @@ public class ThreadService extends Thread
                     toWaiting();
                 }
             }
+            logger.logInfo(String.format("线程 %s 退出", Thread.currentThread().getName()));
         }
         catch (Exception e)
         {
             logger.logError(String.format("线程 %s 处理请求时发生错误", Thread.currentThread().getName()));
             e.printStackTrace();
-        }
-        finally
-        {
             toWaiting();
         }
     }

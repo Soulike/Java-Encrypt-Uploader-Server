@@ -18,7 +18,7 @@ public class MessageProcessor
      */
     public static void sendMessage(Message message, OutputStream out) throws IOException
     {
-        ObjectOutputStream objOut = new ObjectOutputStream(out);
+        final ObjectOutputStream objOut = new ObjectOutputStream(out);
         objOut.writeObject(message);
         objOut.flush();
     }

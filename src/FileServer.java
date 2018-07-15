@@ -2,11 +2,9 @@ import SocketProcessor.FileUploadProcessor;
 import util.MyLogger;
 import util.ThreadPool.ThreadPool;
 
-import javax.crypto.NoSuchPaddingException;
 import java.io.IOException;
 import java.net.*;
 import java.nio.file.*;
-import java.security.*;
 
 public class FileServer
 {
@@ -38,11 +36,6 @@ public class FileServer
                     logger.logError("服务器主线程开启失败");
                     e.printStackTrace();
                 }
-            }
-            catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException e)
-            {
-                logger.logError("加密模块错误");
-                e.printStackTrace();
             }
             catch (IOException e)
             {
