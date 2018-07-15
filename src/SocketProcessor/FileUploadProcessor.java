@@ -108,7 +108,7 @@ public class FileUploadProcessor implements SocketProcessor
                         break;
                     }
 
-                    currentFilePath = Paths.get(root.toString(), currentFileInfo.getFilePath());
+                    currentFilePath = Paths.get(root.toString(), currentFileInfo.getFile().toPath().toString());
                     // 第一个传输过来的信息必然是根目录信息或文件信息
                     if (!hasReadUploadRootPath)
                     {
