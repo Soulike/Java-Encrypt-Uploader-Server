@@ -1,5 +1,6 @@
 package SocketProcessor;
 
+import util.MyLogger;
 import util.Objects.*;
 
 import static util.MessageProcessor.*;
@@ -10,6 +11,7 @@ import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import java.io.*;
 import java.net.Socket;
+import java.net.SocketException;
 import java.nio.file.*;
 import java.security.*;
 
@@ -22,7 +24,7 @@ public class FileUploadProcessor implements SocketProcessor
 {
     /**
      * 创建 Cipher 对象需要的信息
-     * */
+     */
     private final Key key;
     private final IvParameterSpec iv;
     /**
@@ -33,6 +35,8 @@ public class FileUploadProcessor implements SocketProcessor
      * 加密方法。
      */
     private static final String ENCRYPT_MODE = "AES/CFB8/NoPadding";
+
+    private final MyLogger logger;
 
 
     /**
@@ -50,6 +54,8 @@ public class FileUploadProcessor implements SocketProcessor
         {
             Files.createDirectories(root);
         }
+
+        logger = new MyLogger("上传处理模块");
     }
 
 
@@ -84,6 +90,10 @@ public class FileUploadProcessor implements SocketProcessor
             // 文件/文件夹路径所用 Path 对象
             Path currentFilePath = null;
 
+            // 需要记录根目录在发生传输错误时删除已上传文件
+            Path uploadFileRootPath = null;
+            boolean hasReadUploadRootPath = false;
+
             try
             {
                 while (true)
@@ -99,6 +109,12 @@ public class FileUploadProcessor implements SocketProcessor
                     }
 
                     currentFilePath = Paths.get(root.toString(), currentFileInfo.getFilePath());
+                    // 第一个传输过来的信息必然是根目录信息或文件信息
+                    if (!hasReadUploadRootPath)
+                    {
+                        uploadFileRootPath = currentFilePath;
+                        hasReadUploadRootPath = true;
+                    }
 
                     // 删除重名文件/文件夹
                     if (Files.exists(currentFilePath))
@@ -126,8 +142,15 @@ public class FileUploadProcessor implements SocketProcessor
                         {
                             // 最多读到当前文件结束为止
                             readBytesNum = dataIn.read(buffer, 0, (int) (currentFileInfo.getFileSize() - totalReadBytesNum));
-                            fileOut.write(buffer, 0, readBytesNum);
-                            totalReadBytesNum += readBytesNum;
+                            if (readBytesNum != -1)
+                            {
+                                fileOut.write(buffer, 0, readBytesNum);
+                                totalReadBytesNum += readBytesNum;
+                            }
+                            else
+                            {
+                                throw new SocketException("意外的文件结尾");
+                            }
                         }
                         fileOut.close();
                     }
@@ -142,10 +165,25 @@ public class FileUploadProcessor implements SocketProcessor
                 }
                 sendMessage(new Message(true, "上传成功"), encryptedOut);
             }
-            catch (Exception e)
+            catch (SocketException e)
             {
-                e.printStackTrace();
-                sendMessage(new Message(false, "上传失败"), encryptedOut);
+                if (uploadFileRootPath != null)
+                {
+                    delete(uploadFileRootPath);
+                }
+                logger.logWarning("Socket 发生错误，与用户断开连接");
+            }
+            catch (ClassNotFoundException e)
+            {
+                if (uploadFileRootPath != null)
+                {
+                    delete(uploadFileRootPath);
+                }
+                logger.logError("用户发送文件对象错误");
+                if (!socket.isClosed())
+                {
+                    sendMessage(new Message(false, "上传数据非法，请使用客户端上传文件"), encryptedOut);
+                }
             }
         }
     }
