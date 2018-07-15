@@ -1,6 +1,6 @@
 package util.ThreadPool;
 
-import util.Logger.MyLogger;
+import util.MyLogger;
 import SocketProcessor.SocketProcessor;
 
 import java.net.Socket;

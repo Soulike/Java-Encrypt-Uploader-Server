@@ -1,12 +1,19 @@
-package util.Deleter;
+package util;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+/**
+ * 递归删除器。
+ */
 public class recursiveDeleter
 {
+    /**
+     * 递归删除指定文件/文件夹。
+     *
+     * @param filePath 要删除的文件/文件夹 Path 对象。
+     */
     public static void delete(Path filePath) throws IOException
     {
         if (filePath.toFile().exists())
@@ -20,11 +27,11 @@ public class recursiveDeleter
             else
             {
                 Object[] fileList = Files.list(filePath).toArray();
-                for (Object fileObj : fileList)
+                for (Object pathObj : fileList)
                 {
-                    File file = (File) fileObj;
-                    delete(file.toPath());
+                    delete((Path) pathObj);
                 }
+                Files.delete(filePath);
             }
         }
     }

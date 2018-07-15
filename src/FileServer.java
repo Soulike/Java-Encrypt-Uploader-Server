@@ -1,5 +1,5 @@
-import SocketProcessor.UploadProcessor;
-import util.Logger.MyLogger;
+import SocketProcessor.FileUploadProcessor;
+import util.MyLogger;
 import util.ThreadPool.ThreadPool;
 
 import javax.crypto.NoSuchPaddingException;
@@ -26,7 +26,7 @@ public class FileServer
             Path root = Paths.get(args[1]);
             try
             {
-                UploadProcessor processor = new UploadProcessor(root);
+                FileUploadProcessor processor = new FileUploadProcessor(root);
                 try (ServerSocket serverSocket = new ServerSocket(Integer.parseInt(args[0])))
                 {
                     logger.logInfo(String.format("服务器运行在 %s 端口，下载根目录为 %s", args[0], root.toAbsolutePath().toString()));
@@ -53,8 +53,6 @@ public class FileServer
                 logger.logError("上传根目录创建失败");
                 e.printStackTrace();
             }
-
-
         }
     }
 }
