@@ -160,7 +160,7 @@ public class ThreadPool
      */
     class ThreadPoolManager implements Runnable
     {
-        private final Timer timer = new Timer(true);
+        private final Timer timer = new Timer();
 
         /**
          * 当进程池进程数超出范围时进行干预。
