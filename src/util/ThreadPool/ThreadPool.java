@@ -117,7 +117,7 @@ public class ThreadPool
      * @param socket    新建连接产生的 Socket 对象。
      * @param processor 对这个连接进行处理的服务程序，实现 Server 接口。
      */
-    public void createServer(Socket socket, SocketProcessor processor)
+    public void createThread(Socket socket, SocketProcessor processor)
     {
         ThreadService threadService = getRunnableThread();
         synchronized (waitingThreadList)
