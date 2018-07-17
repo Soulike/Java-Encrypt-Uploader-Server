@@ -13,6 +13,7 @@ import java.io.*;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.*;
 
 /**
@@ -22,6 +23,10 @@ import java.security.*;
  */
 public class FileUploadProcessor implements SocketProcessor
 {
+    /**
+     * 保证文件系统同步读取的锁
+     */
+    private final Object fileSystemLock = new Object();
     /**
      * 创建 Cipher 对象需要的信息
      */
@@ -75,6 +80,9 @@ public class FileUploadProcessor implements SocketProcessor
         inCipher.init(Cipher.DECRYPT_MODE, key, iv);
         outCipher.init(Cipher.ENCRYPT_MODE, key, iv);
 
+        // 创建上传临时文件夹名
+        String tempFolderName = String.format("%s-%s-%d", String.valueOf(System.currentTimeMillis()), socket.getInetAddress().getHostAddress(), socket.getPort());
+
         try (final CipherInputStream decryptedIn = new CipherInputStream(socket.getInputStream(), inCipher);
              final CipherOutputStream encryptedOut = new CipherOutputStream(socket.getOutputStream(), outCipher))
         {
@@ -87,11 +95,16 @@ public class FileUploadProcessor implements SocketProcessor
             UploadFileInfo currentFileInfo = null;
             // 存储文件时使用的输出流
             DataOutputStream fileOut = null;
-            // 文件/文件夹路径所用 Path 对象
+            // 文件/文件夹具体路径所用 Path 对象
             Path currentFilePath = null;
-
-            // 需要记录根目录在发生传输错误时删除已上传文件
+            // 文件/文件夹存入的文件夹路径所用 Path 对象
             Path uploadFileRootPath = null;
+
+            // 临时文件/文件夹临时路径所用 Path 对象
+            Path tempFilePath = null;
+            // 文件/文件夹存入的临时文件夹路径所用 Path 对象
+            Path tempRootPath = Paths.get(root.toString(), tempFolderName);
+
             boolean hasReadUploadRootPath = false;
 
             try
@@ -108,7 +121,11 @@ public class FileUploadProcessor implements SocketProcessor
                         break;
                     }
 
+                    // 文件最终实际的存储位置
                     currentFilePath = Paths.get(root.toString(), currentFileInfo.getFile().toPath().toString());
+                    // 文件的临时上传位置
+                    tempFilePath = Paths.get(root.toString(), tempFolderName, currentFileInfo.getFile().toPath().toString());
+
                     // 第一个传输过来的信息必然是根目录信息或文件信息
                     if (!hasReadUploadRootPath)
                     {
@@ -122,18 +139,23 @@ public class FileUploadProcessor implements SocketProcessor
                         delete(currentFilePath);
                     }
 
-
                     // 如果是文件，就读取文件大小并从流中取出指定大小字节
                     if (currentFileInfo.isFile())
                     {
-                        // 如果文件已经存在，覆盖
-                        if (Files.exists(currentFilePath))
+                        // 生成临时文件夹
+                        if (Files.notExists(tempFilePath.getParent()))
                         {
-                            Files.delete(currentFilePath);
+                            Files.createDirectories(tempFilePath.getParent());
                         }
-                        Files.createFile(currentFilePath);
 
-                        fileOut = new DataOutputStream(new FileOutputStream(currentFilePath.toFile()));
+                        // 如果临时文件已经存在，覆盖
+                        if (Files.exists(tempFilePath))
+                        {
+                            Files.delete(tempFilePath);
+                        }
+                        Files.createFile(tempFilePath);
+
+                        fileOut = new DataOutputStream(new FileOutputStream(tempFilePath.toFile()));
 
                         int readBytesNum = 0;
                         long totalReadBytesNum = 0;
@@ -157,11 +179,58 @@ public class FileUploadProcessor implements SocketProcessor
                     // 如果是目录，就根据对象信息创建这个目录
                     else
                     {
-                        if (Files.notExists(currentFilePath))
+                        if (Files.notExists(tempFilePath))
                         {
-                            Files.createDirectories(currentFilePath);
+                            Files.createDirectories(tempFilePath);
                         }
                     }
+                }
+
+                // 以下代码把临时文件夹下内容移动到上传根目录下
+                if (currentFileInfo != null)
+                {
+                    final Path tempRootPathCopy = Paths.get(tempRootPath.toString(), currentFileInfo.getFileName());
+                    final Path uploadFileRootPathCopy = uploadFileRootPath;
+                    Files.walkFileTree(tempRootPath, new FileVisitor<>()
+                    {
+                        @Override
+                        public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes basicFileAttributes)
+                        {
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) throws IOException
+                        {
+                            Path relativePath = tempRootPathCopy.relativize(path);
+                            Path realPath = Paths.get(uploadFileRootPathCopy.toString(), relativePath.toString()).normalize();
+                            if (Files.notExists(realPath.getParent()))
+                            {
+                                Files.createDirectories(realPath.getParent());
+                            }
+
+                            Files.move(path, realPath, StandardCopyOption.REPLACE_EXISTING);
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public FileVisitResult visitFileFailed(Path path, IOException e) throws IOException
+                        {
+                            throw new IOException(e);
+                        }
+
+                        @Override
+                        public FileVisitResult postVisitDirectory(Path path, IOException e) throws IOException
+                        {
+                            Path relativePath = tempRootPathCopy.relativize(path);
+                            Path realPath = Paths.get(uploadFileRootPathCopy.toString(), relativePath.toString());
+                            if (Files.notExists(realPath))
+                            {
+                                Files.createDirectories(realPath);
+                            }
+                            return FileVisitResult.CONTINUE;
+                        }
+                    });
                 }
                 sendMessage(new Message(true, "上传成功"), encryptedOut);
             }
@@ -183,6 +252,31 @@ public class FileUploadProcessor implements SocketProcessor
                 if (!socket.isClosed())
                 {
                     sendMessage(new Message(false, "上传数据非法，请使用客户端上传文件"), encryptedOut);
+                }
+            }
+            catch (IOException e)
+            {
+                if (uploadFileRootPath != null)
+                {
+                    delete(uploadFileRootPath);
+                }
+                logger.logError("服务器 IO 异常");
+                if (!socket.isClosed())
+                {
+                    sendMessage(new Message(false, "服务器 IO 异常，请重新上传"), encryptedOut);
+                }
+            }
+            finally
+            {
+                // 无论上传结果如何，都要关闭输出流并删除临时文件夹
+                if (fileOut != null)
+                {
+                    fileOut.close();
+                }
+
+                if (tempRootPath != null)
+                {
+                    delete(tempRootPath);
                 }
             }
         }
