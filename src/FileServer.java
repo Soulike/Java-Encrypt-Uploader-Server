@@ -28,6 +28,7 @@ public class FileServer
                     while (true)
                     {
                         Socket socket = serverSocket.accept();
+                        socket.setSoTimeout(5000);
                         pool.createThread(socket, processor);
                     }
                 }
