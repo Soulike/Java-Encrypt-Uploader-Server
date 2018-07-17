@@ -1,8 +1,9 @@
 package util.ThreadPool;
 
-import util.MyLogger;
+import SocketProcessor.DatagramSocketProcessor;
 import SocketProcessor.SocketProcessor;
 
+import java.net.DatagramSocket;
 import java.net.Socket;
 import java.util.*;
 
@@ -40,10 +41,6 @@ public class ThreadPool
      */
     private final Object runningThreadListLock = new Object();
 
-    /**
-     * 线程池使用的 MyLogger。
-     */
-    private final MyLogger logger;
 
     /**
      * 默认构造函数，默认范围 50-200。
@@ -83,11 +80,29 @@ public class ThreadPool
         waitingThreadList = new LinkedList<>();
         runningThreadList = new LinkedList<>();
 
-        logger = new MyLogger("线程池");
-
         // 启动进程池管理线程
         ThreadPoolManager poolManager = new ThreadPoolManager();
         new Thread(poolManager).start();
+    }
+
+    /**
+     * 当线程池中还有线程活着时，就阻塞主线程。
+     * 在执行这个方法之后，线程池将不再接受新任务直到所有线程退出。
+     * 用于不会使主线程阻塞的监听任务。
+     */
+    public synchronized void join()
+    {
+        try
+        {
+            while (getCurrentThreadNum() > 0)
+            {
+                wait();
+            }
+        }
+        catch (InterruptedException e)
+        {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -97,38 +112,62 @@ public class ThreadPool
     private ThreadService getRunnableThread()
     {
         // 遍历等待线程列表，找到一个还活着的线程返回
-        for (ThreadService threadService : waitingThreadList)
+        synchronized (waitingThreadListLock)
         {
-            if (threadService.isAlive())
+            for (ThreadService threadService : waitingThreadList)
             {
-                return threadService;
+                if (threadService.isAlive())
+                {
+                    return threadService;
+                }
             }
-        }
 
-        // 如果都死了或者是等待线程列表为空，就创建一个新线程
-        ThreadService newThread = new ThreadService();
-        newThread.start();
-        return newThread;
+            // 如果都死了或者是等待线程列表为空，就创建一个新线程
+            ThreadService newThread = new ThreadService();
+            newThread.start();
+            waitingThreadList.add(newThread);
+            return newThread;
+        }
     }
 
     /**
      * 从等待线程队列中找一个空闲线程创建一个服务线程，并将其从等待线程队列转移到运行线程队列。
      *
-     * @param socket    新建连接产生的 Socket 对象。
-     * @param processor 对这个连接进行处理的服务程序，实现 Server 接口。
+     * @param socketConnection 新建连接产生的被处理 Socket 对象。
+     * @param socketProcessor  对这个连接进行处理的服务程序，实现 SocketProcessor 接口。
      */
-    public void createThread(Socket socket, SocketProcessor processor)
+    public void createThread(Socket socketConnection, SocketProcessor socketProcessor)
     {
         ThreadService threadService = getRunnableThread();
-        synchronized (waitingThreadList)
+        synchronized (runningThreadListLock)
         {
-            waitingThreadList.remove(threadService);
+            synchronized (waitingThreadListLock)
+            {
+                waitingThreadList.remove(threadService);
+                runningThreadList.add(threadService);
+            }
         }
-        synchronized (runningThreadList)
+        threadService.runThreadService(socketConnection, socketProcessor);
+    }
+
+    /**
+     * 从等待线程队列中找一个空闲线程创建一个服务线程，并将其从等待线程队列转移到运行线程队列。
+     *
+     * @param datagramSocket          要监听的 DatagramSocket 对象。
+     * @param datagramSocketProcessor 对这个连接进行处理的服务程序，实现 DatagramSocketProcessor 接口。
+     */
+    public void createThread(DatagramSocket datagramSocket, DatagramSocketProcessor datagramSocketProcessor)
+    {
+        ThreadService threadService = getRunnableThread();
+        synchronized (runningThreadListLock)
         {
-            runningThreadList.add(threadService);
+            synchronized (waitingThreadListLock)
+            {
+                waitingThreadList.remove(threadService);
+                runningThreadList.add(threadService);
+            }
         }
-        threadService.runThreadService(socket, processor);
+        threadService.runThreadService(datagramSocket, datagramSocketProcessor);
     }
 
     /**
@@ -156,11 +195,11 @@ public class ThreadPool
     }
 
     /**
-     * 线程池管理类，开启另一个守护线程定时管理线程池。
+     * 线程池管理类，开启另一个线程定时管理线程池。
      */
     class ThreadPoolManager implements Runnable
     {
-        private final Timer timer = new Timer();
+        private final Timer timer = new Timer(true);
 
         /**
          * 当进程池进程数超出范围时进行干预。
@@ -218,7 +257,6 @@ public class ThreadPool
                     runningThreadList.remove(threadService);
                 }
             }
-
             synchronized (waitingThreadListLock)
             {
                 // 添加到等待队列里
@@ -235,7 +273,6 @@ public class ThreadPool
             {
                 cleanList(runningThreadList);
             }
-
             synchronized (waitingThreadListLock)
             {
                 cleanList(waitingThreadList);
@@ -247,7 +284,7 @@ public class ThreadPool
          *
          * @param threadServiceList 一个线程队列。
          */
-        private void cleanList(List<ThreadService> threadServiceList)
+        private synchronized void cleanList(List<ThreadService> threadServiceList)
         {
             List<ThreadService> exitThreads = new ArrayList<>();
             for (ThreadService threadService : threadServiceList)
@@ -262,6 +299,8 @@ public class ThreadPool
             {
                 threadServiceList.remove(threadService);
             }
+            // 每次清理之后，唤醒线程查看一下是不是线程池为空
+            notify();
         }
 
         /**
@@ -270,12 +309,12 @@ public class ThreadPool
         private void addThreadToMinNum()
         {
             ThreadService threadServiceTemp;
-            synchronized (waitingThreadListLock)
+            while (getCurrentThreadNum() < minThreadNum)
             {
-                while (getCurrentThreadNum() < minThreadNum)
+                threadServiceTemp = new ThreadService();
+                threadServiceTemp.start();
+                synchronized (waitingThreadListLock)
                 {
-                    threadServiceTemp = new ThreadService();
-                    threadServiceTemp.start();
                     waitingThreadList.add(threadServiceTemp);
                 }
             }
@@ -314,12 +353,13 @@ public class ThreadPool
          */
         private void printPoolStatus()
         {
-            logger.logInfo(String.format("线程池整理作业完成\n目前线程池线程数量: %d\n目前线程池等待线程数量: %d\n目前线程池运行线程数量: %d", getCurrentThreadNum(), getCurrentWaitingThreadNum(), getCurrentRunningThreadNum()));
+            System.out.println(String.format("线程池整理作业完成\n目前线程池线程数量: %d\n目前线程池等待线程数量: %d\n目前线程池运行线程数量: %d", getCurrentThreadNum(), getCurrentWaitingThreadNum(), getCurrentRunningThreadNum()));
         }
 
         /**
          * 调用 Timer 运行定时整理任务。
          */
+
         public void run()
         {
             timer.schedule(new TimerTask()

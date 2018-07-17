@@ -67,7 +67,7 @@ public class FileUploadProcessor implements SocketProcessor
      *
      * @param socket ServerSocket 产生的 Socket 对象。
      */
-    public void processSocket(Socket socket) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException, InvalidAlgorithmParameterException
+    public void process(Socket socket) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IOException, InvalidAlgorithmParameterException
     {
         // 创建 Cipher 实例
         Cipher inCipher = Cipher.getInstance(ENCRYPT_MODE);
