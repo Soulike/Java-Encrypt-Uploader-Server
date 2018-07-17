@@ -23,6 +23,7 @@ public class FileServer
                 FileUploadProcessor processor = new FileUploadProcessor(root);
                 try (ServerSocket serverSocket = new ServerSocket(Integer.parseInt(args[0])))
                 {
+                    serverSocket.setSoTimeout(5000);
                     logger.logInfo(String.format("服务器运行在 %s 端口，下载根目录为 %s", args[0], root.toAbsolutePath().toString()));
                     ThreadPool pool = new ThreadPool();
                     while (true)
